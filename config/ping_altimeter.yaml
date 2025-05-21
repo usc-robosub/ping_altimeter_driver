@@ -1,0 +1,6 @@
+serial_port: "/dev/ttyUSB0"
+frame_id: "ping_altimeter"
+frequency: 5.0  # Hz
+fov: 0.52        # radians (~30 degrees)
+min_range: 0.3   # meters
+max_range: 30.0  # meters
