@@ -1,59 +1,58 @@
 #!/usr/bin/env python3
+
 import rospy
 from sensor_msgs.msg import Range
-import yaml
-import os
+from brping import Ping1D
 import time
 
-try:
-    from brping import Ping1D
-except ImportError:
-    raise ImportError("Please install the ping-python package: pip install ping-python")
+class Ping1DAltimeterNode:
+    def __init__(self):
+        # Parameters
+        self.port = rospy.get_param('~port', '/dev/serial0')
+        self.baudrate = rospy.get_param('~baudrate', 115200)
+        self.frame_id = rospy.get_param('~frame_id', 'ping1d')
+        self.rate = rospy.get_param('~rate', 10)  # Hz
 
-def load_config():
-    config_path = rospy.get_param('~config', os.path.join(
-        os.path.dirname(__file__), '../config/ping_altimeter.yaml'))
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+        # Initialize Ping1D device
+        self.ping = Ping1D()
+        rospy.loginfo("Connecting to Ping1D on %s at %d bps...", self.port, self.baudrate)
+        self.ping.connect_serial(self.port, self.baudrate)
 
-def main():
-    rospy.init_node('ping_altimeter_driver')
-    config = load_config()
+        if not self.ping.initialize():
+            rospy.logerr("Failed to initialize Ping1D!")
+            rospy.signal_shutdown("Ping1D device not responding.")
+            return
 
-    serial_port = rospy.get_param('~serial_port', config['serial_port'])
-    frame_id = rospy.get_param('~frame_id', config['frame_id'])
-    frequency = rospy.get_param('~frequency', config['frequency'])
-    fov = rospy.get_param('~fov', config['fov'])
-    min_range = rospy.get_param('~min_range', config['min_range'])
-    max_range = rospy.get_param('~max_range', config['max_range'])
+        rospy.loginfo("Ping1D initialized successfully.")
 
-    pub = rospy.Publisher('ping_altimeter/range', Range, queue_size=10)
+        # ROS publisher
+        self.pub = rospy.Publisher('ping1d/range', Range, queue_size=10)
 
-    sonar = Ping1D()
-    if not sonar.connect_serial(serial_port, 115200):
-        rospy.logerr(f"Failed to connect to Ping device on {serial_port}")
-        return
-    rospy.loginfo(f"Connected to Ping device on {serial_port}")
+        # Start polling loop
+        self.run()
 
-    rate = rospy.Rate(frequency)
-    while not rospy.is_shutdown():
-        data = sonar.get_distance()
-        if data and data['distance'] is not None:
-            msg = Range()
-            msg.header.stamp = rospy.Time.now()
-            msg.header.frame_id = frame_id
-            msg.radiation_type = Range.ULTRASOUND
-            msg.field_of_view = fov
-            msg.min_range = min_range
-            msg.max_range = max_range
-            msg.range = data['distance'] / 1000.0  # mm to meters
-            pub.publish(msg)
-        else:
-            rospy.logwarn("No data from Ping device.")
-        rate.sleep()
+    def run(self):
+        r = rospy.Rate(self.rate)
+        while not rospy.is_shutdown():
+            data = self.ping.get_distance()
+            if data:
+                msg = Range()
+                msg.header.stamp = rospy.Time.now()
+                msg.header.frame_id = self.frame_id
+                msg.radiation_type = Range.ULTRASOUND
+                msg.field_of_view = 0.1  # Set as needed
+                msg.min_range = 0.02     # Ping1D minimum in meters
+                msg.max_range = 30.0     # Ping1D max range (adjust as needed)
+                msg.range = data['distance'] / 1000.0  # Convert mm to m
+
+                self.pub.publish(msg)
+            else:
+                rospy.logwarn("Failed to read distance from Ping1D.")
+            r.sleep()
 
 if __name__ == '__main__':
+    rospy.init_node('ping1d_altimeter_node')
     try:
-        main()
+        Ping1DAltimeterNode()
     except rospy.ROSInterruptException:
         pass
