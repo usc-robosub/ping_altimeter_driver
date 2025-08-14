@@ -4,6 +4,7 @@ import rospy
 from sensor_msgs.msg import Range
 from brping import Ping1D
 import time
+from geometry_msgs.msg import Pose
 
 class Ping1DAltimeterNode:
     def __init__(self):
@@ -27,6 +28,7 @@ class Ping1DAltimeterNode:
 
         # ROS publisher
         self.pub = rospy.Publisher('ping1d/range', Range, queue_size=10)
+        self.pose_pub = rospy.Publisher('ping1d/pose', Pose, queue_size=10)
 
         # Start polling loop
         self.run()
@@ -45,7 +47,15 @@ class Ping1DAltimeterNode:
                 msg.max_range = 30.0     # Ping1D max range (adjust as needed)
                 msg.range = data['distance'] / 1000.0  # Convert mm to m
 
+                msg2 = Pose
+                msg2.header.stamp = rospy.Time.now()
+                msg2.header.frame_id = self.frame_id
+                msg2.position.x = 0.0
+                msg2.position.y = 0.0
+                msg2.position.z = data['distance'] / 1000.0
+
                 self.pub.publish(msg)
+                self.pose_pub.publish(msg2)
             else:
                 rospy.logwarn("Failed to read distance from Ping1D.")
             r.sleep()
